@@ -1,4 +1,6 @@
 credentials.json
 todo.txt
+playground.py
 images/
 __pycache__/
+:memory
