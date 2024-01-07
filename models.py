@@ -3,15 +3,19 @@ from google.cloud import vision
 from PIL import Image
 from io import BytesIO
 
+VISION_CLIENT = vision.ImageAnnotatorClient()
+
 # Model for detecting all cars within images
 # Input: path to image file
 # Output: list of lists containing the four vertices of the bounding box for which a car was detected
-def detect_cars(client, image):
+def detect_cars(image):
+    global VISION_CLIENT
+
     with open(image, "rb") as image_file:
         content = image_file.read()
     image = vision.Image(content = content)
 
-    objects = client.object_localization(image = image).localized_object_annotations
+    objects = VISION_CLIENT.object_localization(image = image).localized_object_annotations
     vertices = []
 
     for object_ in objects:
@@ -73,12 +77,14 @@ def get_color_name(rgb):
 # Model for identifying dominant color
 # Input: image
 # Output: dominant color of image
-def detect_dominant_color(client, images):
+def detect_dominant_color(images):
+    global VISION_CLIENT
+
     dominant_colors = []
 
     for image in images:
         image = vision.Image(content = image)
-        response = client.image_properties(image = image)
+        response = VISION_CLIENT.image_properties(image = image)
         props = response.image_properties_annotation
         dominant_color = ()
         dominant_color_score = 0
@@ -91,10 +97,3 @@ def detect_dominant_color(client, images):
         dominant_colors.append(get_color_name(dominant_color))
 
     return dominant_colors
-
-vision_client = vision.ImageAnnotatorClient()
-image_path = 'traffic_light.jpg'
-cars = detect_cars(vision_client, image_path)
-colors = detect_dominant_color(vision_client, get_cropped_images(image_path, cars))
-
-print(colors)

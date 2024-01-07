@@ -8,15 +8,17 @@ class aidb():
     metadata = MetaData()
     base_tables = {}
     output_tables = {}
+    model_mappings = {}
+    model_api = {}
 
     def __init__(self, config):
         # Create the tables here
         self.build_tables(config)
-        # Create the graph here
-        self.build_column_graph(config)
+        # Add models and model mappings
+        self.setup_models(config)
         # Create the caching tables
         self.build_cache(config)
-        # Load all tables
+        # Load all tables into memory
         self.metadata.create_all(self.engine)
 
     def build_table(self, schema):
@@ -57,11 +59,21 @@ class aidb():
     # Output: No output, builds and deploys caching tables for database
     def build_cache(self, config):
         pass
-    
-    # Function to create dependency graph for database
-    # A directed graph G with a directed edge from column x to column y if
-    # there is an ML model mapping with input x and output y
-    # Input: JSON data containing ML models and model mappings
-    # Output: No output, builds described graph G and stores in self.model_graph
-    def build_column_graph(self, config):
-        pass
+
+
+    # Function to add ML models and add model mappings
+    # Input: JSON data containing models and model mappings
+    # Output: No output, configures internal model mappings
+    def setup_models(self, config):
+            self.model_mappings = config["model_mappings"]["mappings"]
+            for tablename in self.base_tables:
+                self.model_mappings[tablename + '.id'] = []
+            for model in config["model_mappings"]["models"]:
+                self.model_api[model] = None
+
+    # Function to map model names to th ecorresponding ML model api
+    # Input: Model name and corresponding model api function
+    # Output: No output, maps the model name to api
+    def connect_model(self, model_name, model_function):
+        self.model_api[model_name] = model_function
+        

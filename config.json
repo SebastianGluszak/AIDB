@@ -30,6 +30,7 @@
                 "columns": {
                     "primary": {"name": "id", "data_type": "Integer", "auto_increment": true},
                     "foreign": [
+                        {"name": "traffic_id", "foreign_key": "traffic_table.id"},
                         {"name": "car_id", "foreign_key": "car_table.id"}
                     ],
                     "regular": [
@@ -38,5 +39,15 @@
                 }
             }
         ]
-    } 
+    },
+    "model_mappings": {
+        "models": [
+            "car_detection",
+            "color_analysis"
+        ],
+        "mappings": {
+            "car_table.vertices": [{"model": "car_detection", "input": "traffic_table.id"}],
+            "color_table.color": [{"model": "color_analysis", "input": "car_table.vertices"}]
+        }
+    }
 }
