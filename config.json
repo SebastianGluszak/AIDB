@@ -1,0 +1,42 @@
+{
+    "table_schemas": {
+        "base": [
+            {
+                "tablename": "traffic_table",
+                "columns": {
+                    "primary": {"name": "id", "data_type": "Integer", "auto_increment": true},
+                    "foreign": [],
+                    "regular": [
+                        {"name": "image_id", "data_type": "Integer"}
+                    ]
+                }
+            }
+        ],
+        "output": [
+            {
+                "tablename": "car_table",
+                "columns": {
+                    "primary": {"name": "id", "data_type": "Integer", "auto_increment": true},
+                    "foreign": [
+                        {"name": "traffic_id", "foreign_key": "traffic_table.id"}
+                    ],
+                    "regular": [
+                        {"name": "vertices", "data_type": "String"}
+                    ]
+                }
+            },
+            {
+                "tablename": "color_table",
+                "columns": {
+                    "primary": {"name": "id", "data_type": "Integer", "auto_increment": true},
+                    "foreign": [
+                        {"name": "car_id", "foreign_key": "car_table.id"}
+                    ],
+                    "regular": [
+                        {"name": "color", "data_type": "String"}
+                    ]
+                }
+            }
+        ]
+    } 
+}
