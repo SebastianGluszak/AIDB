@@ -141,9 +141,10 @@ class aidb():
 
         while len(queue) != 0:
             curr = queue.pop()
-            for dependency in self.model_mappings[curr]:
-                queue.append(dependency["input"])
-                traversal.append((dependency["input"], curr, dependency["model"]))
+            if curr in self.model_mappings:
+                for dependency in self.model_mappings[curr]:
+                    queue.append(dependency["input"])
+                    traversal.append((dependency["input"], curr, dependency["model"]))
         
         traversal.reverse()
         return traversal
