@@ -11,6 +11,8 @@ class aidb():
     output_tables = {}
     model_mappings = {}
     model_api = {}
+    model_cache = {}
+    cache_hits = 0
 
     def __init__(self, config, base_data, model_api):
         # Create the tables here
@@ -18,7 +20,7 @@ class aidb():
         # Add models and model mappings
         self.setup_models(config, model_api)
         # Create the caching tables
-        self.build_cache(config)
+        self.build_cache()
         # Load all tables into memory
         self.metadata.create_all(self.engine)
         # Insert base table data
@@ -60,8 +62,15 @@ class aidb():
     # Function to create cache tables for caching mechanisms
     # Input: JSON data containing ML models and input columns for respective models
     # Output: No output, builds and deploys caching tables for database
-    def build_cache(self, config):
-        pass
+    def build_cache(self):
+        for _, dependencies in self.model_mappings.items():
+            for dependency in dependencies:
+                model_name = dependency["model"]
+                input_column = dependency["input"]
+                if model_name not in self.model_cache:
+                    self.model_cache[model_name] = {input_column: set()}
+                else:
+                    self.model_cache[model_name][input_column] = set()
 
     # Function to add ML models and add model mappings
     # Input: JSON data containing models and model mappings
@@ -105,13 +114,18 @@ class aidb():
                 output_rows = []
                 result = conn.execute(stmt)
                 for row in result:
-                    output = self.model_api[model_name](row)
-                    output_rows += output
+                    if tuple(row) not in self.model_cache[model_name][input_col]:
+                        output = self.model_api[model_name](row)
+                        output_rows += output
+                        self.model_cache[model_name][input_col].add(tuple(row))
+                    else:
+                        self.cache_hits += 1
 
-            stmt = insert(self.output_tables[output_table]).values(output_rows)
-            with self.engine.connect() as conn:
-                conn.execute(stmt)
-                conn.commit()
+            if len(output_rows) != 0:
+                stmt = insert(self.output_tables[output_table]).values(output_rows)
+                with self.engine.connect() as conn:
+                    conn.execute(stmt)
+                    conn.commit()
 
         with self.engine.connect() as conn:
             result = conn.execute(text(query))

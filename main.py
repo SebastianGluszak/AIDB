@@ -30,6 +30,9 @@ model_api = {"car_detection": detect_cars, "color_analysis": detect_dominant_col
 db = aidb(config, base_data, model_api)
 
 # Execute SQL queries
-result = db.execute("SELECT color_table.id, color_table.traffic_id, color_table.car_id, color_table.color FROM color_table")
+result_one = db.execute("SELECT color_table.id, color_table.traffic_id, color_table.car_id, color_table.color FROM color_table WHERE color_table.color == 'yellow'")
+result_two = db.execute("SELECT color_table.id, color_table.traffic_id, color_table.car_id, color_table.color FROM color_table WHERE color_table.color == 'red'")
 
-print(result.all())
+print(result_one.all())
+print(result_two.all())
+print(f"Number of cache hits: {db.cache_hits}")
