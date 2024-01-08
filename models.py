@@ -19,37 +19,34 @@ def detect_cars(row):
 
     objects = VISION_CLIENT.object_localization(image = image).localized_object_annotations
     vertices = []
+    output_rows = []
 
     for object_ in objects:
         if object_.name == "Car" or object_.name == "Truck":
             box = []
             for vertex in object_.bounding_poly.normalized_vertices:
                 box.append((vertex.x, vertex.y))
-            vertices.append(box)
+            output_rows.append({"traffic_id": traffic_id, "vertices": str(box)})
     
-    output = [{"traffic_id": traffic_id, "vertices": str(vertices)}]
-    return output
+    return output_rows
 
 # Method for cropping specified regions from an image
 # Input: image to crop from, list of locations for crop regions
 # Output: list of cropped images
-def get_cropped_images(image, vertices):
-    cropped_images = []
+def get_cropped_image(image, vertices):
     image = Image.open(image)
     width, height = image.size
+    
+    left = vertices[0][0] * width
+    top = vertices[0][1] * height
+    right = vertices[2][0] * width
+    bottom = vertices[3][1] * height
+    cropped_image = image.crop((left, top, right, bottom))
+    buffer = BytesIO()
+    cropped_image.save(buffer, format = "PNG")
+    content = buffer.getvalue()
 
-    for box in vertices:
-        left = box[0][0] * width
-        top = box[0][1] * height
-        right = box[2][0] * width
-        bottom = box[3][1] * height
-        cropped_image = image.crop((left, top, right, bottom))
-        buffer = BytesIO()
-        cropped_image.save(buffer, format = "PNG")
-        content = buffer.getvalue()
-        cropped_images.append(content)
-
-    return cropped_images
+    return content
 
 # Method for converting rgb color value to closest generalized color
 # Input: tuple of rgb values
@@ -87,25 +84,20 @@ def detect_dominant_color(row):
     vertices = eval(row[2])
 
     image_path = "images/base/traffic_" + str(traffic_id) + ".jpg"
-    images = get_cropped_images(image_path, vertices)
+    cropped_image = get_cropped_image(image_path, vertices)
 
-    dominant_colors = []
-    output_rows = []
+    image = vision.Image(content = cropped_image)
+    response = VISION_CLIENT.image_properties(image = image)
+    props = response.image_properties_annotation
+    dominant_color = ()
+    dominant_color_score = 0
 
-    for image in images:
-        image = vision.Image(content = image)
-        response = VISION_CLIENT.image_properties(image = image)
-        props = response.image_properties_annotation
-        dominant_color = ()
-        dominant_color_score = 0
+    for color in props.dominant_colors.colors:
+        if color.score > dominant_color_score:
+            dominant_color_score = color.score
+            dominant_color = (color.color.red, color.color.green, color.color.blue)
+    
+    dominant_color = get_color_name(dominant_color)
+    output = {"traffic_id": traffic_id, "car_id": car_id, "color": dominant_color}
 
-        for color in props.dominant_colors.colors:
-            if color.score > dominant_color_score:
-                dominant_color_score = color.score
-                dominant_color = (color.color.red, color.color.green, color.color.blue)
-        
-        dominant_color = get_color_name(dominant_color)
-        output_row = {"traffic_id": traffic_id, "car_id": car_id, "color": dominant_color}
-        output_rows.append(output_row)
-
-    return output_rows
+    return [output]
