@@ -8,8 +8,10 @@ VISION_CLIENT = vision.ImageAnnotatorClient()
 # Model for detecting all cars within images
 # Input: path to image file
 # Output: list of lists containing the four vertices of the bounding box for which a car was detected
-def detect_cars(image):
+def detect_cars(row):
     global VISION_CLIENT
+    traffic_id = row[0]
+    image = row[1]
 
     with open(image, "rb") as image_file:
         content = image_file.read()
@@ -25,7 +27,8 @@ def detect_cars(image):
                 box.append((vertex.x, vertex.y))
             vertices.append(box)
     
-    return vertices
+    output = [{"traffic_id": traffic_id, "vertices": str(vertices)}]
+    return output
 
 # Method for cropping specified regions from an image
 # Input: image to crop from, list of locations for crop regions
@@ -77,10 +80,17 @@ def get_color_name(rgb):
 # Model for identifying dominant color
 # Input: image
 # Output: dominant color of image
-def detect_dominant_color(images):
+def detect_dominant_color(row):
     global VISION_CLIENT
+    car_id = row[0]
+    traffic_id = row[1]
+    vertices = eval(row[2])
+
+    image_path = "images/base/traffic_" + str(traffic_id) + ".jpg"
+    images = get_cropped_images(image_path, vertices)
 
     dominant_colors = []
+    output_rows = []
 
     for image in images:
         image = vision.Image(content = image)
@@ -94,6 +104,8 @@ def detect_dominant_color(images):
                 dominant_color_score = color.score
                 dominant_color = (color.color.red, color.color.green, color.color.blue)
         
-        dominant_colors.append(get_color_name(dominant_color))
+        dominant_color = get_color_name(dominant_color)
+        output_row = {"traffic_id": traffic_id, "car_id": car_id, "color": dominant_color}
+        output_rows.append(output_row)
 
-    return dominant_colors
+    return output_rows

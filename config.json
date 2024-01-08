@@ -7,7 +7,7 @@
                     "primary": {"name": "id", "data_type": "Integer", "auto_increment": true},
                     "foreign": [],
                     "regular": [
-                        {"name": "image_id", "data_type": "Integer"}
+                        {"name": "image_path", "data_type": "String"}
                     ]
                 }
             }

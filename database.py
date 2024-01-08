@@ -1,7 +1,7 @@
 # Database sytem class handling storage of all necessary data
 # Includes querying functionality
 
-from sqlalchemy import create_engine, ForeignKey, MetaData, Table, Column, Integer, String, text
+from sqlalchemy import create_engine, ForeignKey, MetaData, Table, Column, Integer, String, text, select, insert
 import re
 
 class aidb():
@@ -12,15 +12,17 @@ class aidb():
     model_mappings = {}
     model_api = {}
 
-    def __init__(self, config):
+    def __init__(self, config, base_data, model_api):
         # Create the tables here
         self.build_tables(config)
         # Add models and model mappings
-        self.setup_models(config)
+        self.setup_models(config, model_api)
         # Create the caching tables
         self.build_cache(config)
         # Load all tables into memory
         self.metadata.create_all(self.engine)
+        # Insert base table data
+        self.upload_base_data(base_data)
 
     def build_table(self, schema):
         data_type_mapper = {"Integer": Integer, "String": String}
@@ -64,18 +66,23 @@ class aidb():
     # Function to add ML models and add model mappings
     # Input: JSON data containing models and model mappings
     # Output: No output, configures internal model mappings
-    def setup_models(self, config):
+    def setup_models(self, config, model_api):
             self.model_mappings = config["model_mappings"]["mappings"]
             for tablename in self.base_tables:
                 self.model_mappings[tablename + '.id'] = []
-            for model in config["model_mappings"]["models"]:
-                self.model_api[model] = None
+            self.model_api = model_api
 
-    # Function to map model names to the corresponding ML model api
-    # Input: Model name and corresponding model api function
-    # Output: No output, maps the model name to api
-    def connect_model(self, model_name, model_function):
-        self.model_api[model_name] = model_function
+    # Function to upload base data to base tables
+    # Input: Base tablename and List of object rows of base table data
+    # Output: No output, uploads data to the specified base table
+    def upload_base_data(self, data):
+        for table in data:
+            tablename = table["tablename"]
+            table_data = table["data"]
+            stmt = insert(self.base_tables[tablename]).values(table_data)
+            with self.engine.connect() as conn:
+                conn.execute(stmt)
+                conn.commit()
 
     # Function to execute sql query to database
     # Input: SQL query text
@@ -83,14 +90,33 @@ class aidb():
     def execute(self, query):
         selected_columns = self.get_selected_columns(query)
         dependencies = self.get_dependencies(selected_columns)
+        
         for dependency in dependencies:
-            # Check if cached data
-            # Else run ML model and upload data to corresponding table
-            pass
+            input_col, output_col, model_name = dependency
+            input_table = input_col.split('.')[0]
+            output_table = output_col.split('.')[0]
+
+            if input_table in self.base_tables:
+                stmt = select(self.base_tables[input_table])
+            else:
+                stmt = select(self.output_tables[input_table])
+
+            with self.engine.connect() as conn:
+                output_rows = []
+                result = conn.execute(stmt)
+                for row in result:
+                    output = self.model_api[model_name](row)
+                    output_rows += output
+
+            stmt = insert(self.output_tables[output_table]).values(output_rows)
+            with self.engine.connect() as conn:
+                conn.execute(stmt)
+                conn.commit()
+
         with self.engine.connect() as conn:
             result = conn.execute(text(query))
-            for row in result:
-                print(row)
+        
+        return result
     
     # Function to extract selected columns in an sql query
     # Input: SQL query text
