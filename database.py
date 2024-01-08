@@ -1,7 +1,8 @@
 # Database sytem class handling storage of all necessary data
 # Includes querying functionality
 
-from sqlalchemy import create_engine, ForeignKey, MetaData, Table, Column, Integer, String
+from sqlalchemy import create_engine, ForeignKey, MetaData, Table, Column, Integer, String, text
+import re
 
 class aidb():
     engine = create_engine("sqlite+pysqlite:///:memory", echo = True)
@@ -60,7 +61,6 @@ class aidb():
     def build_cache(self, config):
         pass
 
-
     # Function to add ML models and add model mappings
     # Input: JSON data containing models and model mappings
     # Output: No output, configures internal model mappings
@@ -71,9 +71,54 @@ class aidb():
             for model in config["model_mappings"]["models"]:
                 self.model_api[model] = None
 
-    # Function to map model names to th ecorresponding ML model api
+    # Function to map model names to the corresponding ML model api
     # Input: Model name and corresponding model api function
     # Output: No output, maps the model name to api
     def connect_model(self, model_name, model_function):
         self.model_api[model_name] = model_function
+
+    # Function to execute sql query to database
+    # Input: SQL query text
+    # Output: Query output
+    def execute(self, query):
+        selected_columns = self.get_selected_columns(query)
+        dependencies = self.get_dependencies(selected_columns)
+        for dependency in dependencies:
+            # Check if cached data
+            # Else run ML model and upload data to corresponding table
+            pass
+        with self.engine.connect() as conn:
+            result = conn.execute(text(query))
+            for row in result:
+                print(row)
+    
+    # Function to extract selected columns in an sql query
+    # Input: SQL query text
+    # Output: List of selected columns
+    def get_selected_columns(self, query):
+        pattern = r"SELECT\s+(.*?)\s+FROM"
+        match = re.search(pattern, query, re.IGNORECASE)
+        
+        if match:
+            columns = match.group(1).split(',')
+            columns = [col.strip() for col in columns]
+            return columns
+        else:
+            return []
+    
+    # Function to traverse all columns that selected columns are dependent on
+    # Input: List of selected columns
+    # Output: List of selected columns and all columns that selected columns are dependent on
+    def get_dependencies(self, columns):
+        queue = [column for column in columns]
+        traversal = []
+
+        while len(queue) != 0:
+            curr = queue.pop()
+            for dependency in self.model_mappings[curr]:
+                queue.append(dependency["input"])
+                traversal.append((dependency["input"], curr, dependency["model"]))
+        
+        traversal.reverse()
+        return traversal
         
