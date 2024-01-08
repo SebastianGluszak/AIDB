@@ -18,7 +18,6 @@ def detect_cars(row):
     image = vision.Image(content = content)
 
     objects = VISION_CLIENT.object_localization(image = image).localized_object_annotations
-    vertices = []
     output_rows = []
 
     for object_ in objects:
@@ -27,7 +26,7 @@ def detect_cars(row):
             for vertex in object_.bounding_poly.normalized_vertices:
                 box.append((vertex.x, vertex.y))
             output_rows.append({"traffic_id": traffic_id, "vertices": str(box)})
-    
+
     return output_rows
 
 # Method for cropping specified regions from an image
