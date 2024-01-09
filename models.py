@@ -82,7 +82,7 @@ def detect_dominant_color(row):
     traffic_id = row[1]
     vertices = eval(row[2])
 
-    image_path = "images/base/traffic_" + str(traffic_id) + ".jpg"
+    image_path = "images/traffic_" + str(traffic_id) + ".jpg"
     cropped_image = get_cropped_image(image_path, vertices)
 
     image = vision.Image(content = cropped_image)
