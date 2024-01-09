@@ -5,7 +5,7 @@ from sqlalchemy import create_engine, ForeignKey, MetaData, Table, Column, Integ
 import re
 
 class aidb():
-    engine = create_engine("sqlite+pysqlite:///:memory", echo = True)
+    engine = create_engine("sqlite+pysqlite:///:memory")
     metadata = MetaData()
     base_tables = {}
     output_tables = {}
@@ -96,7 +96,7 @@ class aidb():
     # Function to execute sql query to database
     # Input: SQL query text
     # Output: Query output
-    def execute(self, query):
+    def execute_exact(self, query):
         selected_columns = self.get_selected_columns(query)
         dependencies = self.get_dependencies(selected_columns)
         
@@ -137,14 +137,14 @@ class aidb():
     # Output: List of selected columns
     def get_selected_columns(self, query):
         pattern = r"SELECT\s+(.*?)\s+FROM"
-        match = re.search(pattern, query, re.IGNORECASE)
+        results = re.findall(pattern, query, re.IGNORECASE)
+
+        columns = []
+
+        for result in results:
+            columns.extend(result.split(', '))
         
-        if match:
-            columns = match.group(1).split(',')
-            columns = [col.strip() for col in columns]
-            return columns
-        else:
-            return []
+        return columns
     
     # Function to traverse all columns that selected columns are dependent on
     # Input: List of selected columns
@@ -162,4 +162,9 @@ class aidb():
         
         traversal.reverse()
         return traversal
-        
+    
+    # Function to execute an approximate SQL query
+    # Input: SQL query text
+    # Output: Approximated SQL query output
+    def execute_approximate(self, query):
+        pass
