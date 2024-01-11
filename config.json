@@ -1,53 +1,84 @@
 {
-    "table_schemas": {
-        "base": [
-            {
-                "tablename": "traffic_table",
-                "columns": {
-                    "primary": {"name": "id", "data_type": "Integer", "auto_increment": true},
-                    "foreign": [],
-                    "regular": [
-                        {"name": "image_path", "data_type": "String"}
-                    ]
-                }
-            }
-        ],
-        "output": [
-            {
-                "tablename": "car_table",
-                "columns": {
-                    "primary": {"name": "id", "data_type": "Integer", "auto_increment": true},
-                    "foreign": [
-                        {"name": "traffic_id", "foreign_key": "traffic_table.id"}
-                    ],
-                    "regular": [
-                        {"name": "vertices", "data_type": "String"}
-                    ]
-                }
+    "table_schemas": [
+        {
+            "tablename": "traffic_table",
+            "columns": {
+                "primary": {"name": "id", "data_type": "Integer"},
+                "foreign": [],
+                "regular": [
+                    {"name": "image_id", "data_type": "Integer"}
+                ]
             },
-            {
-                "tablename": "color_table",
-                "columns": {
-                    "primary": {"name": "id", "data_type": "Integer", "auto_increment": true},
-                    "foreign": [
-                        {"name": "traffic_id", "foreign_key": "traffic_table.id"},
-                        {"name": "car_id", "foreign_key": "car_table.id"}
-                    ],
-                    "regular": [
-                        {"name": "color", "data_type": "String"}
-                    ]
-                }
-            }
-        ]
-    },
-    "model_mappings": {
-        "models": [
-            "car_detection",
-            "color_analysis"
-        ],
-        "mappings": {
-            "car_table.vertices": [{"model": "car_detection", "input": "traffic_table.id"}],
-            "color_table.color": [{"model": "color_analysis", "input": "car_table.vertices"}]
+            "is_base": 1
+        },
+        {
+            "tablename": "car_table",
+            "columns": {
+                "primary": {"name": "id", "data_type": "Integer"},
+                "foreign": [
+                    {"name": "traffic_id", "foreign_key": "traffic_table.id"},
+                    {"name": "image_id", "foreign_key": "traffic_table.image_id"}
+                ],
+                "regular": [
+                {"name": "min_x", "data_type": "Float"},
+                {"name": "max_x", "data_type": "Float"},
+                {"name": "min_y", "data_type": "Float"},
+                {"name": "max_y", "data_type": "Float"}
+                ]
+            },
+            "is_base": 0
+        },
+        {
+            "tablename": "color_table",
+            "columns": {
+                "primary": {"name": "id", "data_type": "Integer"},
+                "foreign": [
+                    {"name": "traffic_id", "foreign_key": "traffic_table.id"},
+                    {"name": "image_id", "foreign_key": "traffic_table.image_id"},
+                    {"name": "car_id", "foreign_key": "car_table.id"}
+                ],
+                "regular": [
+                    {"name": "color", "data_type": "String"}
+                ]
+            },
+            "is_base": 0
         }
-    }
+    ],
+    "models": [
+        {
+            "name": "car_detection",
+            "inputs": [
+                "traffic_table.id",
+                "traffic_table.image_id"
+            ],
+            "outputs": [
+                "car_table.id",
+                "car_table.traffic_id",
+                "car_table.image_id",
+                "car_table.min_x",
+                "car_table.max_x",
+                "car_table.min_y",
+                "car_table.max_y"
+            ]
+        },
+        {
+            "name": "color_detection",
+            "inputs": [
+                "car_table.traffic_id",
+                "car_table.image_id",
+                "car_table.id",
+                "car_table.min_x",
+                "car_table.max_x",
+                "car_table.min_y",
+                "car_table.max_y"
+            ],
+            "outputs": [
+                "color_table.id",
+                "color_table.traffic_id",
+                "color_table.image_id",
+                "color_table.car_id",
+                "color_table.color"
+            ]
+        }
+    ]
 }

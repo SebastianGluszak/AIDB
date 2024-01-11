@@ -1,33 +1,24 @@
-# Database sytem class handling storage of all necessary data
-# Includes querying functionality
-
-from sqlalchemy import create_engine, ForeignKey, MetaData, Table, Column, Integer, String, text, select, insert
+from sqlalchemy import create_engine, MetaData, Table, Column, String, Integer, Boolean, Float, select, insert, ForeignKey, text
+from graph import ModelNode
 import re
 
-class aidb():
-    engine = create_engine("sqlite+pysqlite:///:memory")
+class AIDB():
+    engine = create_engine("sqlite+pysqlite:///:memory", echo = True)
     metadata = MetaData()
-    base_tables = {}
-    output_tables = {}
-    model_mappings = {}
-    model_api = {}
-    model_cache = {}
-    cache_hits = 0
+    base_tablenames = set()
+    tables = {} 
+    models = {}
+    column_dependencies = {}
+    model_tree = None
+    cache = {}
 
     def __init__(self, config, base_data, model_api):
-        # Create the tables here
-        self.build_tables(config)
-        # Add models and model mappings
-        self.setup_models(config, model_api)
-        # Create the caching tables
-        self.build_cache()
-        # Load all tables into memory
-        self.metadata.create_all(self.engine)
-        # Insert base table data
-        self.upload_base_data(base_data)
+        self._build_tables(config)
+        self._upload_data(base_data)
+        self._setup_models(config, model_api)
 
-    def build_table(self, schema):
-        data_type_mapper = {"Integer": Integer, "String": String}
+    def _build_table_helper(self, schema):
+        data_type_mapper = {"Integer": Integer, "String": String, "Boolean": Boolean, "Float": Float}
         tablename = schema["tablename"]
         columns = schema["columns"]
 
@@ -45,126 +36,118 @@ class aidb():
 
         return table
 
-    # Function used to create sqlalchemy tables using config file
-    # Input: JSON data containing base and output table schemas
-    # Output: No output, builds and deploys base and output tables for database
-    def build_tables(self, config):
+    def _build_tables(self, config):
         table_schemas = config["table_schemas"]
-        
-        for schema in table_schemas["base"]:
-            base_table = self.build_table(schema)
-            self.base_tables[base_table.name] = base_table
 
-        for schema in table_schemas["output"]:
-            output_table = self.build_table(schema)
-            self.output_tables[output_table.name] = output_table
+        for schema in table_schemas:
+            table = self._build_table_helper(schema)
+            self.tables[table.name] = table
+            if schema["is_base"] == True:
+                self.base_tablenames.add(table.name) 
 
-    # Function to create cache tables for caching mechanisms
-    # Input: JSON data containing ML models and input columns for respective models
-    # Output: No output, builds and deploys caching tables for database
-    def build_cache(self):
-        for _, dependencies in self.model_mappings.items():
-            for dependency in dependencies:
-                model_name = dependency["model"]
-                input_column = dependency["input"]
-                if model_name not in self.model_cache:
-                    self.model_cache[model_name] = {input_column: set()}
-                else:
-                    self.model_cache[model_name][input_column] = set()
-
-    # Function to add ML models and add model mappings
-    # Input: JSON data containing models and model mappings
-    # Output: No output, configures internal model mappings
-    def setup_models(self, config, model_api):
-            self.model_mappings = config["model_mappings"]["mappings"]
-            for tablename in self.base_tables:
-                self.model_mappings[tablename + '.id'] = []
-            self.model_api = model_api
-
-    # Function to upload base data to base tables
-    # Input: Base tablename and List of object rows of base table data
-    # Output: No output, uploads data to the specified base table
-    def upload_base_data(self, data):
+        self.metadata.create_all(self.engine)
+    
+    def _upload_data(self, data):
         for table in data:
             tablename = table["tablename"]
             table_data = table["data"]
-            stmt = insert(self.base_tables[tablename]).values(table_data)
+            insert_statement = insert(self.tables[tablename]).values(table_data)
+
             with self.engine.connect() as conn:
-                conn.execute(stmt)
+                conn.execute(insert_statement)
                 conn.commit()
 
-    # Function to execute sql query to database
-    # Input: SQL query text
-    # Output: Query output
-    def execute_exact(self, query):
-        selected_columns = self.get_selected_columns(query)
-        dependencies = self.get_dependencies(selected_columns)
-        
-        for dependency in dependencies:
-            input_col, output_col, model_name = dependency
-            input_table = input_col.split('.')[0]
-            output_table = output_col.split('.')[0]
+    def _setup_models(self, config, model_api):
+        models = config["models"]
 
-            if input_table in self.base_tables:
-                stmt = select(self.base_tables[input_table])
-            else:
-                stmt = select(self.output_tables[input_table])
+        for model in models:
+            for model_output in model["outputs"]:
+                self.column_dependencies[model_output] = model["inputs"]
+            self.models[model["name"]] = {"api": model_api[model["name"]], "inputs": model["inputs"], "outputs": model["outputs"]}
+            self.cache[model["name"]] = set()
+
+        base_columns = set()
+        for base_tablename in self.base_tablenames:
+            base_table = self.tables[base_tablename]
+            for column in base_table.c:
+                base_columns.add(str(column))
+        
+        self.model_tree = ModelNode(base_columns)
+
+        queue = [self.model_tree]
+        while len(queue) != 0:
+            curr = queue.pop(0)
+            for modelname, model in self.models.items():
+                if set(model["inputs"]).issubset(curr.columns):
+                    explored_columns = {column for column in curr.columns}
+                    for column in model["outputs"]:
+                        explored_columns.add(column)
+                    if len(explored_columns) > len(curr.columns):
+                        neighbor = ModelNode(explored_columns)
+                        queue.append(neighbor)
+                        curr.add_neighbor(neighbor, modelname)
+
+    def _get_column_dependencies(self, columns):
+        queue = [column for column in columns]
+        traversal = {column for column in columns}
+        
+        while len(queue) != 0:
+            curr = queue.pop()
+            if curr in self.column_dependencies:
+                for dependency in self.column_dependencies[curr]:
+                    if dependency not in traversal:
+                        queue.append(dependency)
+                        traversal.add(dependency)
+
+        return traversal
+    
+    def _get_model_dependencies(self, columns):
+        queue = [(self.model_tree, [])]
+
+        while len(queue) != 0:
+            curr_node, curr_models = queue.pop(0)
+            if columns.issubset(curr_node.columns):
+                return curr_models
+            for edge in curr_node.neighbors:
+                queue.append((edge.target, curr_models + [edge.model]))
+        
+        return []
+
+    def query(self, sql_text):
+        pattern = r'\b\w+\.\w+\b'  
+        selected_columns = re.findall(pattern, sql_text)
+        column_dependencies = self._get_column_dependencies(selected_columns)
+        model_dependencies = self._get_model_dependencies(column_dependencies)
+
+        for model in model_dependencies:
+            inputs, outputs, name = self.models[model]["inputs"], self.models[model]["outputs"], model
+            input_columns = [self.tables[column.split('.')[0]].c[column.split('.')[1]] for column in inputs]
+            select_statement = select(*(column for column in input_columns))
 
             with self.engine.connect() as conn:
                 output_rows = []
-                result = conn.execute(stmt)
+                result = conn.execute(select_statement)
                 for row in result:
-                    if tuple(row) not in self.model_cache[model_name][input_col]:
-                        output = self.model_api[model_name](row)
+                    if tuple(row) not in self.cache[name]:
+                        output = self.models[name]["api"](row)
                         output_rows += output
-                        self.model_cache[model_name][input_col].add(tuple(row))
-                    else:
-                        self.cache_hits += 1
+                        self.cache[name].add(tuple(row))
+            
+            for column in outputs:
+                output_table = column.split('.')[0]
+                break
 
             if len(output_rows) != 0:
-                stmt = insert(self.output_tables[output_table]).values(output_rows)
+                insert_statement = insert(self.tables[output_table]).values(output_rows)
+                
                 with self.engine.connect() as conn:
-                    conn.execute(stmt)
+                    conn.execute(insert_statement)
                     conn.commit()
-
+        
         with self.engine.connect() as conn:
-            result = conn.execute(text(query))
+            result = conn.execute(text(sql_text))
         
         return result
-    
-    # Function to extract selected columns in an sql query
-    # Input: SQL query text
-    # Output: List of selected columns
-    def get_selected_columns(self, query):
-        pattern = r"SELECT\s+(.*?)\s+FROM"
-        results = re.findall(pattern, query, re.IGNORECASE)
 
-        columns = []
-
-        for result in results:
-            columns.extend(result.split(', '))
-        
-        return columns
-    
-    # Function to traverse all columns that selected columns are dependent on
-    # Input: List of selected columns
-    # Output: List of selected columns and all columns that selected columns are dependent on
-    def get_dependencies(self, columns):
-        queue = [column for column in columns]
-        traversal = []
-
-        while len(queue) != 0:
-            curr = queue.pop()
-            if curr in self.model_mappings:
-                for dependency in self.model_mappings[curr]:
-                    queue.append(dependency["input"])
-                    traversal.append((dependency["input"], curr, dependency["model"]))
-        
-        traversal.reverse()
-        return traversal
-    
-    # Function to execute an approximate SQL query
-    # Input: SQL query text
-    # Output: Approximated SQL query output
-    def execute_approximate(self, query):
+    def approximate_query(self, sql_text):
         pass
