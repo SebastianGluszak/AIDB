@@ -16,10 +16,10 @@
             "columns": {
                 "primary": {"name": "id", "data_type": "Integer"},
                 "foreign": [
-                    {"name": "traffic_id", "foreign_key": "traffic_table.id"},
-                    {"name": "image_id", "foreign_key": "traffic_table.image_id"}
+                    {"name": "traffic_id", "foreign_key": "traffic_table.id"}
                 ],
                 "regular": [
+                {"name": "image_id", "data_type": "Integer"},
                 {"name": "min_x", "data_type": "Float"},
                 {"name": "max_x", "data_type": "Float"},
                 {"name": "min_y", "data_type": "Float"},
@@ -34,10 +34,10 @@
                 "primary": {"name": "id", "data_type": "Integer"},
                 "foreign": [
                     {"name": "traffic_id", "foreign_key": "traffic_table.id"},
-                    {"name": "image_id", "foreign_key": "traffic_table.image_id"},
                     {"name": "car_id", "foreign_key": "car_table.id"}
                 ],
                 "regular": [
+                    {"name": "image_id", "data_type": "Integer"},
                     {"name": "color", "data_type": "String"}
                 ]
             },
