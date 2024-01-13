@@ -3,6 +3,7 @@ from models import detect_cars, detect_color
 import json
 import glob
 import re
+import timeit
 
 # Load in config file
 config_file = 'config.json'
@@ -17,7 +18,7 @@ base_data = [
     }
 ]
 
-traffic_images = glob.glob("images/*")
+traffic_images = glob.glob("images/*")[:100]
 traffic_images.sort()
 number_pattern = re.compile(r'\d+')
 
@@ -31,5 +32,16 @@ model_api = {"car_detection": detect_cars, "color_detection": detect_color}
 # Construct AIDB
 aidb = AIDB(config, base_data, model_api)
 
-# Query database
-print(aidb.query('SELECT color_table.color, car_table.min_x FROM color_table, car_table').all())
+# Example approximate average query
+approximate_query_time = timeit.timeit(stmt = lambda: print(aidb.approximate_average('car_table.min_x', 20)), number  = 1)
+
+# Example exact query
+exact_query_time = timeit.timeit(stmt = lambda: print(aidb.query('SELECT color_table.image_id FROM color_table WHERE color_table.color == "cyan"').all()), number = 1)
+
+# Example exact query with cached results from previous queries
+cached_query_time = timeit.timeit(stmt = lambda: print(aidb.query('SELECT color_table.image_id FROM color_table WHERE color_table.color == "red"').all()), number = 1)
+
+# Query time results
+print(f"Approximate query time: {approximate_query_time}")
+print(f"Exact query time: {exact_query_time}")
+print(f"Cached query time: {cached_query_time}")
