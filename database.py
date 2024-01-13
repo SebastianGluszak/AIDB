@@ -1,9 +1,11 @@
-from sqlalchemy import create_engine, MetaData, Table, Column, String, Integer, Boolean, Float, select, insert, ForeignKey, text
+from sqlalchemy import create_engine, MetaData, Table, Column, String, Integer, Boolean, Float, select, insert, ForeignKey, text, func
 from graph import ModelNode
 import re
+import math
+import scipy.stats as stats
 
 class AIDB():
-    engine = create_engine("sqlite+pysqlite:///:memory", echo = True)
+    engine = create_engine("sqlite+pysqlite:///:memory")
     metadata = MetaData()
     base_tablenames = set()
     tables = {} 
@@ -42,7 +44,7 @@ class AIDB():
         for schema in table_schemas:
             table = self._build_table_helper(schema)
             self.tables[table.name] = table
-            if schema["is_base"] == True:
+            if schema["is_base"] == 1:
                 self.base_tablenames.add(table.name) 
 
         self.metadata.create_all(self.engine)
@@ -115,7 +117,7 @@ class AIDB():
 
     def query(self, sql_text):
         pattern = r'\b\w+\.\w+\b'  
-        selected_columns = re.findall(pattern, sql_text)
+        selected_columns = re.findall(pattern, sql_text.replace('(', ' ').replace(')', ' '))
         column_dependencies = self._get_column_dependencies(selected_columns)
         model_dependencies = self._get_model_dependencies(column_dependencies)
 
@@ -149,5 +151,100 @@ class AIDB():
         
         return result
 
-    def approximate_query(self, sql_text):
-        pass
+    def approximate_average(self, selected_column, num_samples):
+        selected_columns = [selected_column]
+        column_dependencies = self._get_column_dependencies(selected_columns)
+        model_dependencies = self._get_model_dependencies(column_dependencies)
+
+        # Sample rows from base table
+        base_table = None
+        
+        for column in column_dependencies:
+            table = column.split('.')[0]
+            if table in self.base_tablenames:
+                base_table = self.tables[table]
+
+        sample_statement = select(base_table.c['id']).order_by(func.random()).limit(num_samples)
+
+        with self.engine.connect() as conn:
+            samples = conn.execute(sample_statement)
+        
+        sample_ids = []
+        for sample in samples.all():
+            sample_ids.append(sample[0])
+
+        # Iterate through models using only these base rows
+        for model in model_dependencies:
+            inputs, outputs, name = self.models[model]["inputs"], self.models[model]["outputs"], model
+            for column in outputs:
+                output_table = self.tables[column.split('.')[0]]
+                break
+            for column in inputs:
+                input_table = self.tables[column.split('.')[0]]
+                break
+
+            input_columns = [self.tables[column.split('.')[0]].c[column.split('.')[1]] for column in inputs]
+            if input_table == base_table:
+                select_statement = select(*(column for column in input_columns)).filter(base_table.c.id.in_(sample_ids))
+            else:
+                select_statement = select(*(column for column in input_columns)).join(base_table).filter(base_table.c.id.in_(sample_ids))
+
+            with self.engine.connect() as conn:
+                output_rows = []
+                result = conn.execute(select_statement)
+                for row in result:
+                    if tuple(row) not in self.cache[name]:
+                        output = self.models[name]["api"](row)
+                        output_rows += output
+                        self.cache[name].add(tuple(row))
+    
+            if len(output_rows) != 0:
+                insert_statement = insert(output_table).values(output_rows)
+                
+                with self.engine.connect() as conn:
+                    conn.execute(insert_statement)
+                    conn.commit()
+        
+        # Generate strata
+        statistic_column = self.tables[selected_column.split('.')[0]].c[selected_column.split('.')[1]]
+        final_sample_statement = select(statistic_column, base_table.c.id).join(base_table).filter(base_table.c.id.in_(sample_ids))
+
+        with self.engine.connect() as conn:
+            final_samples = conn.execute(final_sample_statement).fetchall()
+
+        counts = {}
+        for sample in final_samples:
+            counts[sample[1]] = counts.get(sample[1], 0) + 1
+        
+        strata = {}
+        for sample in final_samples:
+            strata[counts[sample[1]]] = strata.get(counts[sample[1]], []) + [sample[0]]
+
+        # Compute statisitcs among strata
+        statistics = []
+        for values in strata.values():
+            num_samples = len(values)
+            mean = sum(values) / num_samples
+            n = num_samples - 1 if num_samples > 1 else 1
+            standard_deviation = (sum([(value - mean) ** 2 for value in values]) / n) ** 0.5
+            statistics.append({"num_samples": num_samples, "mean": mean, "standard_deviation": standard_deviation})
+
+        # Compute population estimates
+        total_samples = len(final_samples)
+
+        population_estimate = {"mean": 0, "standard_deviation": 0}
+        for statistic in statistics:
+            population_estimate["mean"] += (statistic['num_samples'] * statistic["mean"])
+        population_estimate["mean"] /= total_samples
+
+        for statistic in statistics:
+            num_samples, sample_mean, sample_standard_deviation = statistic["num_samples"], statistic["mean"], statistic["standard_deviation"]
+            population_estimate["standard_deviation"] += num_samples * sample_standard_deviation ** 2 + num_samples * (sample_mean - population_estimate["mean"]) ** 2
+        population_estimate["standard_deviation"] = ((1 / (total_samples)) * population_estimate["standard_deviation"]) ** 0.5
+
+        # Compute confidence interval
+        confidence_level = 0.95
+        margin_of_error = stats.norm.ppf((1 + confidence_level) / 2) * (population_estimate["standard_deviation"] / math.sqrt(total_samples))
+        confidence_interval = (population_estimate["mean"] - margin_of_error, population_estimate["mean"] + margin_of_error)
+
+        return confidence_interval
